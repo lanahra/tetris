@@ -38,7 +38,7 @@ type Cell
 model : Model
 model =
   { windowSize = (0, 0)
-  , grid = Array.repeat rows (Array.repeat columns Block)
+  , grid = Array.repeat rows (Array.repeat columns Empty)
   }
 
 
@@ -69,10 +69,23 @@ view : Model -> Html Msg
 view model =
   toHtml <|
   uncurry container model.windowSize middle <|
+  layers <|
+  (::) makeField <|
+  List.singleton <|
   flow down <|
   List.map makeRow <|
   (++) (List.repeat 2 (List.repeat columns Empty)) <|
   List.drop 2 (gridToList model.grid)
+
+makeField : Element
+makeField =
+  let
+    (width, height) =
+      (blockSize * columns, blockSize * rows)
+  in
+    collage width height <|
+      [ outlined defaultLine (rect width height)
+      ]
 
 gridToList : Array (Array Cell) -> List (List Cell)
 gridToList grid =
