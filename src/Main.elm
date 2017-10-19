@@ -3,6 +3,7 @@ import Collage exposing (..)
 import Color
 import Element exposing (..)
 import Html exposing (..)
+import Matrix exposing (Matrix)
 import Task
 import Window
 
@@ -23,11 +24,8 @@ initialSizeCmd =
 
 type alias Model =
   { windowSize : (Int, Int)
-  , grid : Grid
+  , matrix : Matrix Cell
   }
-
-type alias Grid =
-  Array (Array Cell)
 
 type Cell
   = Empty
@@ -38,7 +36,7 @@ type Cell
 model : Model
 model =
   { windowSize = (0, 0)
-  , grid = Array.repeat rows (Array.repeat columns Empty)
+  , matrix = Matrix.matrix rows columns (\_ -> Empty)
   }
 
 
@@ -52,7 +50,6 @@ update msg model =
   case msg of
     WindowResize size ->
       ({ model | windowSize = (size.width, size.height) }, Cmd.none)
-
 
 -- SUBSCRIPTIONS
 
@@ -75,7 +72,7 @@ view model =
   flow down <|
   List.map makeRow <|
   (++) (List.repeat 2 (List.repeat columns Empty)) <|
-  List.drop 2 (gridToList model.grid)
+  List.drop 2 (Matrix.toList model.matrix)
 
 makeField : Element
 makeField =
@@ -86,11 +83,6 @@ makeField =
     collage width height <|
       [ outlined defaultLine (rect width height)
       ]
-
-gridToList : Array (Array Cell) -> List (List Cell)
-gridToList grid =
-  Array.map (\row -> Array.toList row) grid
-    |> Array.toList
 
 makeRow : List (Cell) -> Element
 makeRow row =
