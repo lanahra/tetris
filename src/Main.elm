@@ -28,27 +28,74 @@ initialSizeCmd =
 
 type alias Model =
   { windowSize : (Int, Int)
-  , grid : Grid Square
+  , grid : Grid Tetromino
+  , activeTetromino : Tetromino
+  , activeSquares : List (Int, Int)
   }
 
-type Square
-  = ISquare
-  | OSquare
-  | TSquare
-  | JSquare
-  | LSquare
-  | SSquare
-  | ZSquare
+type Tetromino
+  = I
+  | O
+  | T
+  | J
+  | L
+  | S
+  | Z
 
 model : Model
 model =
   { windowSize = (0, 0)
   , grid = Grid.empty
+  , activeTetromino = I
+  , activeSquares = []
   }
 
 init : Model -> Model
 init model =
-  model
+  initSquares model
+    |> initGrid
+
+initSquares : Model -> Model
+initSquares model =
+  let
+    updateSquares squares =
+      { model | activeSquares = squares }
+  in
+    case model.activeTetromino of
+      I ->
+        updateSquares [(0, 4), (1, 4), (2, 4), (3, 4)]
+
+      O ->
+        updateSquares [(0, 4), (0, 5), (1, 4), (1, 5)]
+
+      T ->
+        updateSquares [(0, 4), (1, 4), (1, 3), (1, 5)]
+
+      J ->
+        updateSquares [(0, 4), (1, 4), (2, 4), (2, 3)]
+
+      L ->
+        updateSquares [(0, 4), (1, 4), (2, 4), (2, 5)]
+
+      S ->
+        updateSquares [(0, 4), (0, 5), (1, 3), (1, 4)]
+
+      Z ->
+        updateSquares [(0, 4), (0, 5), (1, 5), (1, 6)]
+
+initGrid : Model -> Model
+initGrid model =
+  let
+    setGrid squares grid =
+      case squares of
+        [] ->
+          grid
+
+        square :: rest ->
+          uncurry Grid.set square model.activeTetromino grid
+            |> setGrid rest
+  in
+    { model | grid = setGrid model.activeSquares model.grid }
 
 
 -- UPDATE
@@ -100,7 +147,7 @@ makeField =
       [ outlined defaultLine (rect width height)
       ]
 
-makeGrid : Grid Square -> Element
+makeGrid : Grid Tetromino -> Element
 makeGrid grid =
   let
     makeElement ((row, column), square) =
@@ -122,7 +169,7 @@ moveSquare row column square =
   in
     container width height position square
 
-makeSquare : Square -> Element
+makeSquare : Tetromino -> Element
 makeSquare square =
   let
     squareCollage color =
@@ -132,24 +179,24 @@ makeSquare square =
         ]
   in
     case square of
-      ISquare ->
+      I ->
         squareCollage Color.blue
 
-      OSquare ->
+      O ->
         squareCollage Color.red
 
-      TSquare ->
+      T ->
         squareCollage Color.green
 
-      JSquare ->
+      J ->
         squareCollage Color.yellow
 
-      LSquare ->
+      L ->
         squareCollage Color.orange
 
-      SSquare ->
+      S ->
         squareCollage Color.purple
 
-      ZSquare ->
+      Z ->
         squareCollage Color.brown
 
