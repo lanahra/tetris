@@ -1,9 +1,10 @@
 import Array exposing (Array)
 import Collage exposing (..)
 import Color
+import Dict exposing (Dict)
 import Element exposing (..)
+import Grid exposing (Grid, set)
 import Html exposing (..)
-import Matrix exposing (Matrix, Location)
 import Task
 import Time exposing (Time)
 import Window
@@ -23,49 +24,31 @@ initialSizeCmd =
 
 -- MODEL
 
+(gridRows, gridColumns) = (22, 10)
+
 type alias Model =
   { windowSize : (Int, Int)
-  , matrix : Matrix Cell
-  , blocks : List Block
+  , grid : Grid Square
   }
 
-type Cell
-  = Empty
-  | Square
-
-type alias Block =
-  { row : Int
-  , column : Int
-  }
-
-(columns, rows) = (10, 22)
+type Square
+  = ISquare
+  | OSquare
+  | TSquare
+  | JSquare
+  | LSquare
+  | SSquare
+  | ZSquare
 
 model : Model
 model =
   { windowSize = (0, 0)
-  , matrix = Matrix.matrix rows columns (\_ -> Empty)
-  , blocks = { row = 3, column = 5} :: { row = 2, column = 5} :: []
+  , grid = Grid.empty
   }
 
 init : Model -> Model
 init model =
-  { model | matrix = initMatrix model.blocks model.matrix }
-
-initMatrix : List Block -> Matrix Cell -> Matrix Cell
-initMatrix blocks matrix =
-  case blocks of
-    [] ->
-      matrix
-
-    [block] ->
-      Matrix.set (block.row, block.column) Square matrix
-
-    (block::rest) ->
-      let
-        newMatrix =
-          Matrix.set (block.row, block.column) Square matrix
-      in
-        initMatrix rest newMatrix
+  model
 
 
 -- UPDATE
@@ -84,54 +67,7 @@ update msg model =
 
 step : Model -> Model
 step model =
-  { model | matrix = stepMatrix model.matrix }
-
-stepMatrix : Matrix Cell -> Matrix Cell
-stepMatrix matrix =
-  recMatrix (rows - 1) 0 matrix
-
-recMatrix : Int -> Int -> Matrix Cell -> Matrix Cell
-recMatrix row column matrix =
-  if column == columns then
-    recMatrix (row - 1) 0 matrix
-  else
-    if row < 0 then
-      matrix
-    else
-      let
-        newMatrix =
-          stepCell row column matrix
-      in
-        recMatrix row (column + 1) newMatrix
-
-stepCell : Int -> Int -> Matrix Cell -> Matrix Cell
-stepCell row column matrix =
-  let
-    bottomCell =
-      Matrix.get (row + 1, column) matrix
-  in
-    case bottomCell of
-      Just Empty ->
-        let
-          cell =
-            Matrix.get (row, column) matrix
-        in
-          case cell of
-            Just Square ->
-              Matrix.set (row, column) Empty matrix
-                |> Matrix.set (row + 1, column) Square
-
-            Just Empty ->
-              matrix
-
-            Nothing ->
-              matrix
-
-      Just Square ->
-        matrix
-
-      Nothing ->
-        matrix
+  model
 
 
 -- SUBSCRIPTIONS
@@ -152,37 +88,68 @@ view : Model -> Html Msg
 view model =
   toHtml <|
   uncurry container model.windowSize middle <|
-  layers <|
-  (::) makeField <|
-  List.singleton <|
-  flow down <|
-  List.map makeRow <|
-  (++) (List.repeat 2 (List.repeat columns Empty)) <|
-  List.drop 2 (Matrix.toList model.matrix)
+  layers (makeField :: [makeGrid model.grid])
 
 makeField : Element
 makeField =
   let
     (width, height) =
-      (blockSize * columns, blockSize * rows)
+      (blockSize * gridColumns, blockSize * gridRows)
   in
     collage width height <|
       [ outlined defaultLine (rect width height)
       ]
 
-makeRow : List (Cell) -> Element
-makeRow row =
-  flow right <|
-  List.map makeCell row
+makeGrid : Grid Square -> Element
+makeGrid grid =
+  let
+    makeElement ((row, column), square) =
+      makeSquare square
+        |> moveSquare row column
+  in
+    Grid.toIndexedList grid
+      |> List.map makeElement
+      |> layers
 
-makeCell : Cell -> Element
-makeCell cell =
-  case cell of
-    Square ->
+moveSquare : Int -> Int -> Element -> Element
+moveSquare row column square =
+  let
+    (width, height) =
+      (blockSize * gridColumns, blockSize * gridRows)
+
+    position =
+      topLeftAt (absolute (column * blockSize)) (absolute (row * blockSize))
+  in
+    container width height position square
+
+makeSquare : Square -> Element
+makeSquare square =
+  let
+    squareCollage color =
       collage blockSize blockSize <|
-        [ filled Color.red (square blockSize)
-        , outlined defaultLine (square blockSize)
+        [ filled color (Collage.square blockSize)
+        , outlined defaultLine (Collage.square blockSize)
         ]
+  in
+    case square of
+      ISquare ->
+        squareCollage Color.blue
 
-    Empty ->
-      spacer blockSize blockSize
+      OSquare ->
+        squareCollage Color.red
+
+      TSquare ->
+        squareCollage Color.green
+
+      JSquare ->
+        squareCollage Color.yellow
+
+      LSquare ->
+        squareCollage Color.orange
+
+      SSquare ->
+        squareCollage Color.purple
+
+      ZSquare ->
+        squareCollage Color.brown
+
