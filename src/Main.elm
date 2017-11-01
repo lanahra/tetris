@@ -1,10 +1,10 @@
 import Array exposing (Array)
 import Collage exposing (..)
 import Color
-import Dict exposing (Dict)
 import Element exposing (..)
-import Grid exposing (Grid, set)
+import Grid exposing (Grid)
 import Html exposing (..)
+import Set
 import Task
 import Time exposing (Time)
 import Window
@@ -45,7 +45,7 @@ type Tetromino
 model : Model
 model =
   { windowSize = (0, 0)
-  , grid = Grid.empty
+  , grid = Grid.empty gridRows
   , activeTetromino = I
   , activeSquares = []
   }
@@ -92,7 +92,7 @@ initGrid model =
           grid
 
         square :: rest ->
-          uncurry Grid.set square model.activeTetromino grid
+          uncurry Grid.insert square model.activeTetromino grid
             |> setGrid rest
   in
     { model | grid = setGrid model.activeSquares model.grid }
@@ -114,7 +114,68 @@ update msg model =
 
 step : Model -> Model
 step model =
-  model
+  dropTetromino model
+
+dropTetromino : Model -> Model
+dropTetromino model =
+  if tetrominoCanDrop model.grid model.activeSquares then
+    let
+      remove squares grid =
+        case squares of
+          [] ->
+            grid
+
+          square :: rest ->
+            uncurry Grid.remove square grid
+              |> remove rest
+
+      insert squares grid =
+        case squares of
+          [] ->
+            grid
+
+          square :: rest ->
+            uncurry Grid.insert square model.activeTetromino grid
+              |> insert rest
+
+      dropSquares =
+        List.map (\(row, column) -> (row + 1, column)) model.activeSquares
+
+      drop =
+        remove model.activeSquares model.grid
+          |> insert dropSquares
+    in
+      { model
+          | grid = drop
+          , activeSquares = dropSquares
+      }
+  else
+    model
+
+tetrominoCanDrop : Grid Tetromino -> List (Int, Int) -> Bool
+tetrominoCanDrop grid squares =
+    let
+      canDrop drops =
+        case drops of
+          [] ->
+            True
+
+          (row, column) :: rest ->
+            let
+              squareCanDrop =
+                Grid.memberRow row grid
+                && (Grid.member row column >> not) grid
+            in
+              if squareCanDrop then
+                canDrop rest
+              else
+                False
+    in
+      List.map (\(row, column) -> (row + 1, column)) squares
+        |> Set.fromList
+        |> flip Set.diff (Set.fromList squares)
+        |> Set.toList
+        |> canDrop
 
 
 -- SUBSCRIPTIONS
