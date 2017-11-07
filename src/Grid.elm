@@ -5,6 +5,7 @@ module Grid exposing
   , remove
   , member
   , memberRow
+  , sizeRow
   , toIndexedList)
 
 import Dict exposing (Dict)
@@ -71,6 +72,17 @@ memberRow row grid =
   case grid of
     Grid dict ->
       Dict.member row dict
+
+sizeRow : Int -> Grid a -> Int
+sizeRow row grid =
+  case grid of
+    Grid dict ->
+      case Dict.get row dict of
+        Just dict ->
+          Dict.size dict
+
+        Nothing ->
+          0
 
 toIndexedList : Grid a -> List ((Int, Int), a)
 toIndexedList grid =

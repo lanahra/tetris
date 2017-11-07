@@ -4,6 +4,7 @@ import Color
 import Element exposing (..)
 import Grid exposing (Grid)
 import Html exposing (..)
+import Random exposing (Generator)
 import Set
 import Task
 import Time exposing (Time)
@@ -11,15 +12,18 @@ import Window
 
 main =
   Html.program
-    { init = (init model, initialSizeCmd)
+    { init = (init model, initCmd)
     , view = view
     , update = update
     , subscriptions = subscriptions
     }
 
-initialSizeCmd : Cmd Msg
-initialSizeCmd =
-  Task.perform WindowResize Window.size
+initCmd : Cmd Msg
+initCmd =
+  Cmd.batch
+    [ Task.perform WindowResize Window.size
+    , initRollTetromino
+    ]
 
 
 -- MODEL
@@ -28,10 +32,16 @@ initialSizeCmd =
 
 type alias Model =
   { windowSize : (Int, Int)
+  , gameState : GameState
   , grid : Grid Tetromino
   , activeTetromino : Tetromino
+  , nextTetromino : Tetromino
   , activeSquares : List (Int, Int)
   }
+
+type GameState
+  = Running
+  | Over
 
 type Tetromino
   = I
@@ -45,15 +55,16 @@ type Tetromino
 model : Model
 model =
   { windowSize = (0, 0)
+  , gameState = Running
   , grid = Grid.empty gridRows
   , activeTetromino = I
+  , nextTetromino = I
   , activeSquares = []
   }
 
 init : Model -> Model
 init model =
-  initSquares model
-    |> initGrid
+  model
 
 initSquares : Model -> Model
 initSquares model =
@@ -103,54 +114,72 @@ initGrid model =
 type Msg
   = WindowResize Window.Size
   | Step Time
+  | RollTetromino
+  | NewTetromino Tetromino
+  | InitTetromino (Tetromino, Tetromino)
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     WindowResize size ->
       ({ model | windowSize = (size.width, size.height) }, Cmd.none)
-    Step _ ->
-      (step model, Cmd.none)
 
-step : Model -> Model
+    Step _ ->
+      step model
+
+    RollTetromino ->
+      (model, rollTetromino)
+
+    NewTetromino tetromino ->
+      (newTetromino tetromino model, Cmd.none)
+
+    InitTetromino tetrominos ->
+      (initTetromino tetrominos model, Cmd.none)
+
+step : Model -> (Model, Cmd Msg)
 step model =
-  dropTetromino model
+  case model.gameState of
+    Running ->
+      if tetrominoCanDrop model.grid model.activeSquares then
+        (dropTetromino model, Cmd.none)
+      else
+        setGameState model
+
+    Over ->
+      (model, Cmd.none)
 
 dropTetromino : Model -> Model
 dropTetromino model =
-  if tetrominoCanDrop model.grid model.activeSquares then
-    let
-      remove squares grid =
-        case squares of
-          [] ->
-            grid
+  let
+    remove squares grid =
+      case squares of
+        [] ->
+          grid
 
-          square :: rest ->
-            uncurry Grid.remove square grid
-              |> remove rest
+        square :: rest ->
+          uncurry Grid.remove square grid
+            |> remove rest
 
-      insert squares grid =
-        case squares of
-          [] ->
-            grid
+    insert squares grid =
+      case squares of
+        [] ->
+          grid
 
-          square :: rest ->
-            uncurry Grid.insert square model.activeTetromino grid
-              |> insert rest
+        square :: rest ->
+          uncurry Grid.insert square model.activeTetromino grid
+            |> insert rest
 
-      dropSquares =
-        List.map (\(row, column) -> (row + 1, column)) model.activeSquares
+    dropSquares =
+      List.map (\(row, column) -> (row + 1, column)) model.activeSquares
 
-      drop =
-        remove model.activeSquares model.grid
-          |> insert dropSquares
-    in
-      { model
-          | grid = drop
-          , activeSquares = dropSquares
-      }
-  else
-    model
+    drop =
+      remove model.activeSquares model.grid
+        |> insert dropSquares
+  in
+    { model
+        | grid = drop
+        , activeSquares = dropSquares
+    }
 
 tetrominoCanDrop : Grid Tetromino -> List (Int, Int) -> Bool
 tetrominoCanDrop grid squares =
@@ -176,6 +205,77 @@ tetrominoCanDrop grid squares =
         |> flip Set.diff (Set.fromList squares)
         |> Set.toList
         |> canDrop
+
+setGameState : Model -> (Model, Cmd Msg)
+setGameState model =
+  if gameIsOver model.grid then
+    ({ model | gameState = Over }, Cmd.none)
+  else
+    (model, rollTetromino)
+
+gameIsOver : Grid Tetromino -> Bool
+gameIsOver grid =
+  Grid.sizeRow 0 grid + Grid.sizeRow 1 grid > 0
+
+newTetromino : Tetromino -> Model -> Model
+newTetromino tetromino model =
+  { model
+      | activeTetromino = model.nextTetromino
+      , nextTetromino = tetromino
+  }
+    |> initSquares
+    |> initGrid
+
+initTetromino : (Tetromino, Tetromino) -> Model -> Model
+initTetromino init model =
+  case init of
+    (active, next) ->
+      { model
+          | activeTetromino = active
+          , nextTetromino = next
+      }
+        |> initSquares
+        |> initGrid
+
+
+-- COMMANDS
+
+randomTetromino : Generator Tetromino
+randomTetromino =
+  let
+    intToTetromino i =
+      case i of
+        0 ->
+          I
+
+        1 ->
+          O
+
+        2 ->
+          T
+
+        3 ->
+          J
+
+        4 ->
+          L
+
+        5 ->
+          S
+
+        _ ->
+          Z
+  in
+    Random.map intToTetromino (Random.int 0 6)
+
+rollTetromino : Cmd Msg
+rollTetromino =
+  Random.generate NewTetromino randomTetromino
+
+initRollTetromino : Cmd Msg
+initRollTetromino =
+  Random.generate InitTetromino <|
+    Random.pair randomTetromino randomTetromino
 
 
 -- SUBSCRIPTIONS
