@@ -8,10 +8,13 @@ module Grid exposing
   , sizeRow
   , toIndexedList)
 
+
 import Dict exposing (Dict)
+
 
 type Grid a
   = Grid (Dict Int (Dict Int a))
+
 
 empty : Int -> Grid a
 empty rows =
@@ -30,6 +33,7 @@ empty rows =
   in
     Grid (create range Dict.empty)
 
+
 insert : Int -> Int -> a -> Grid a -> Grid a
 insert row column a grid =
   case grid of
@@ -46,6 +50,7 @@ insert row column a grid =
       in
         Grid (Dict.insert row rowDict dict)
 
+
 remove : Int -> Int -> Grid a -> Grid a
 remove row column grid =
   case grid of
@@ -55,6 +60,7 @@ remove row column grid =
           Dict.remove column dict
       in
         Grid (Dict.update row (Maybe.map remove) dict)
+
 
 member : Int -> Int -> Grid a -> Bool
 member row column grid =
@@ -67,11 +73,13 @@ member row column grid =
         Nothing ->
           False
 
+
 memberRow : Int -> Grid a -> Bool
 memberRow row grid =
   case grid of
     Grid dict ->
       Dict.member row dict
+
 
 sizeRow : Int -> Grid a -> Int
 sizeRow row grid =
@@ -83,6 +91,7 @@ sizeRow row grid =
 
         Nothing ->
           0
+
 
 toIndexedList : Grid a -> List ((Int, Int), a)
 toIndexedList grid =

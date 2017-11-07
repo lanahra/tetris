@@ -10,6 +10,7 @@ import Task
 import Time exposing (Time)
 import Window
 
+
 main =
   Html.program
     { init = (init model, initCmd)
@@ -17,6 +18,7 @@ main =
     , update = update
     , subscriptions = subscriptions
     }
+
 
 initCmd : Cmd Msg
 initCmd =
@@ -30,6 +32,7 @@ initCmd =
 
 (gridRows, gridColumns) = (22, 10)
 
+
 type alias Model =
   { windowSize : (Int, Int)
   , gameState : GameState
@@ -39,9 +42,11 @@ type alias Model =
   , activeSquares : List (Int, Int)
   }
 
+
 type GameState
   = Running
   | Over
+
 
 type Tetromino
   = I
@@ -51,6 +56,7 @@ type Tetromino
   | L
   | S
   | Z
+
 
 model : Model
 model =
@@ -62,9 +68,11 @@ model =
   , activeSquares = []
   }
 
+
 init : Model -> Model
 init model =
   model
+
 
 initSquares : Model -> Model
 initSquares model =
@@ -94,6 +102,7 @@ initSquares model =
       Z ->
         updateSquares [(0, 4), (0, 5), (1, 5), (1, 6)]
 
+
 initGrid : Model -> Model
 initGrid model =
   let
@@ -118,6 +127,7 @@ type Msg
   | NewTetromino Tetromino
   | InitTetromino (Tetromino, Tetromino)
 
+
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
@@ -136,6 +146,7 @@ update msg model =
     InitTetromino tetrominos ->
       (initTetromino tetrominos model, Cmd.none)
 
+
 step : Model -> (Model, Cmd Msg)
 step model =
   case model.gameState of
@@ -147,6 +158,7 @@ step model =
 
     Over ->
       (model, Cmd.none)
+
 
 dropTetromino : Model -> Model
 dropTetromino model =
@@ -181,30 +193,32 @@ dropTetromino model =
         , activeSquares = dropSquares
     }
 
+
 tetrominoCanDrop : Grid Tetromino -> List (Int, Int) -> Bool
 tetrominoCanDrop grid squares =
-    let
-      canDrop drops =
-        case drops of
-          [] ->
-            True
+  let
+    canDrop drops =
+      case drops of
+        [] ->
+          True
 
-          (row, column) :: rest ->
-            let
-              squareCanDrop =
-                Grid.memberRow row grid
-                && (Grid.member row column >> not) grid
-            in
-              if squareCanDrop then
-                canDrop rest
-              else
-                False
-    in
-      List.map (\(row, column) -> (row + 1, column)) squares
-        |> Set.fromList
-        |> flip Set.diff (Set.fromList squares)
-        |> Set.toList
-        |> canDrop
+        (row, column) :: rest ->
+          let
+            squareCanDrop =
+              Grid.memberRow row grid
+              && (Grid.member row column >> not) grid
+          in
+            if squareCanDrop then
+              canDrop rest
+            else
+              False
+  in
+    List.map (\(row, column) -> (row + 1, column)) squares
+      |> Set.fromList
+      |> flip Set.diff (Set.fromList squares)
+      |> Set.toList
+      |> canDrop
+
 
 setGameState : Model -> (Model, Cmd Msg)
 setGameState model =
@@ -213,9 +227,11 @@ setGameState model =
   else
     (model, rollTetromino)
 
+
 gameIsOver : Grid Tetromino -> Bool
 gameIsOver grid =
   Grid.sizeRow 0 grid + Grid.sizeRow 1 grid > 0
+
 
 newTetromino : Tetromino -> Model -> Model
 newTetromino tetromino model =
@@ -225,6 +241,7 @@ newTetromino tetromino model =
   }
     |> initSquares
     |> initGrid
+
 
 initTetromino : (Tetromino, Tetromino) -> Model -> Model
 initTetromino init model =
@@ -268,9 +285,11 @@ randomTetromino =
   in
     Random.map intToTetromino (Random.int 0 6)
 
+
 rollTetromino : Cmd Msg
 rollTetromino =
   Random.generate NewTetromino randomTetromino
+
 
 initRollTetromino : Cmd Msg
 initRollTetromino =
@@ -292,11 +311,13 @@ subscriptions model =
 
 blockSize = 40
 
+
 view : Model -> Html Msg
 view model =
   toHtml <|
   uncurry container model.windowSize middle <|
   layers (makeField :: [makeGrid model.grid])
+
 
 makeField : Element
 makeField =
@@ -307,6 +328,7 @@ makeField =
     collage width height <|
       [ outlined defaultLine (rect width height)
       ]
+
 
 makeGrid : Grid Tetromino -> Element
 makeGrid grid =
@@ -319,6 +341,7 @@ makeGrid grid =
       |> List.map makeElement
       |> layers
 
+
 moveSquare : Int -> Int -> Element -> Element
 moveSquare row column square =
   let
@@ -329,6 +352,7 @@ moveSquare row column square =
       topLeftAt (absolute (column * blockSize)) (absolute (row * blockSize))
   in
     container width height position square
+
 
 makeSquare : Tetromino -> Element
 makeSquare square =
@@ -360,4 +384,3 @@ makeSquare square =
 
       Z ->
         squareCollage Color.brown
-
