@@ -21,11 +21,64 @@ main =
     }
 
 
+-- COMMANDS
+
 initCmd : Cmd Msg
 initCmd =
   Cmd.batch
     [ Task.perform WindowResize Window.size
     , initRollTetromino
+    ]
+
+
+randomTetromino : Generator Tetromino
+randomTetromino =
+  let
+    intToTetromino i =
+      case i of
+        0 ->
+          I
+
+        1 ->
+          O
+
+        2 ->
+          T
+
+        3 ->
+          J
+
+        4 ->
+          L
+
+        5 ->
+          S
+
+        _ ->
+          Z
+  in
+    Random.map intToTetromino (Random.int 0 6)
+
+
+rollTetromino : Cmd Msg
+rollTetromino =
+  Random.generate NewTetromino randomTetromino
+
+
+initRollTetromino : Cmd Msg
+initRollTetromino =
+  Random.generate InitTetromino <|
+    Random.pair randomTetromino randomTetromino
+
+
+-- SUBSCRIPTIONS
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+  Sub.batch
+    [ Window.resizes (\size -> WindowResize size)
+    , Time.every Time.second Step
+    , Keyboard.downs KeyDown
     ]
 
 
@@ -311,59 +364,6 @@ input code model =
 
     Over ->
       model
-
-
--- COMMANDS
-
-randomTetromino : Generator Tetromino
-randomTetromino =
-  let
-    intToTetromino i =
-      case i of
-        0 ->
-          I
-
-        1 ->
-          O
-
-        2 ->
-          T
-
-        3 ->
-          J
-
-        4 ->
-          L
-
-        5 ->
-          S
-
-        _ ->
-          Z
-  in
-    Random.map intToTetromino (Random.int 0 6)
-
-
-rollTetromino : Cmd Msg
-rollTetromino =
-  Random.generate NewTetromino randomTetromino
-
-
-initRollTetromino : Cmd Msg
-initRollTetromino =
-  Random.generate InitTetromino <|
-    Random.pair randomTetromino randomTetromino
-
-
--- SUBSCRIPTIONS
-
-subscriptions : Model -> Sub Msg
-subscriptions model =
-  Sub.batch
-    [ Window.resizes (\size -> WindowResize size)
-    , Time.every Time.second Step
-    , Keyboard.downs KeyDown
-    ]
 
 
 -- VIEW
