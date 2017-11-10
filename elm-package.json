@@ -2,7 +2,7 @@
     "version": "1.0.0",
     "summary": "Classic tetris game implemented in Elm",
     "repository": "https://github.com/lanahra/tetris-elm.git",
-    "license": "BSD3",
+    "license": "MIT",
     "source-directories": [
         "src"
     ],
