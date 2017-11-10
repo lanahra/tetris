@@ -94,6 +94,7 @@ type alias Model =
   , activeTetromino : Tetromino
   , nextTetromino : Tetromino
   , activeSquares : List (Int, Int)
+  , activeOrientation: Orientation
   }
 
 
@@ -112,6 +113,13 @@ type Tetromino
   | Z
 
 
+type Orientation
+  = North
+  | East
+  | South
+  | West
+
+
 model : Model
 model =
   { windowSize = (0, 0)
@@ -120,6 +128,7 @@ model =
   , activeTetromino = I
   , nextTetromino = I
   , activeSquares = []
+  , activeOrientation = North
   }
 
 
@@ -142,19 +151,19 @@ initSquares model =
         updateSquares [(0, 4), (0, 5), (1, 4), (1, 5)]
 
       T ->
-        updateSquares [(0, 4), (1, 4), (1, 3), (1, 5)]
+        updateSquares [(0, 4), (1, 3), (1, 4), (1, 5)]
 
       J ->
-        updateSquares [(0, 4), (1, 4), (2, 4), (2, 3)]
+        updateSquares [(0, 3), (1, 3), (1, 4), (1, 5)]
 
       L ->
-        updateSquares [(0, 4), (1, 4), (2, 4), (2, 5)]
+        updateSquares [(1, 3), (1, 4), (1, 5), (0, 5)]
 
       S ->
-        updateSquares [(0, 4), (0, 5), (1, 3), (1, 4)]
+        updateSquares [(1, 3), (1, 4), (0, 4), (0, 5)]
 
       Z ->
-        updateSquares [(0, 4), (0, 5), (1, 5), (1, 6)]
+        updateSquares [(0, 3), (0, 4), (1, 4), (1, 5)]
 
 
 initGrid : Model -> Model
@@ -241,8 +250,8 @@ moveSquare direction (row, column) =
       (row + 1, column)
 
 
-moveTetromino : Direction -> Model -> Model
-moveTetromino direction model =
+moveSquares : List (Int, Int) -> Model -> Model
+moveSquares moves model =
   let
     remove squares grid =
       case squares of
@@ -261,47 +270,297 @@ moveTetromino direction model =
         square :: rest ->
           uncurry Grid.insert square model.activeTetromino grid
             |> insert rest
-
-    moveSquares =
-      List.map (moveSquare direction) model.activeSquares
-
-    move =
-      remove model.activeSquares model.grid
-        |> insert moveSquares
   in
-    { model
-        | grid = move
-        , activeSquares = moveSquares
-    }
+    remove model.activeSquares model.grid
+      |> insert moves
+      |> \grid -> { model | grid = grid }
+
+
+moveTetromino : Direction -> Model -> Model
+moveTetromino direction model =
+  let
+    moves =
+      List.map (moveSquare direction) model.activeSquares
+  in
+    moveSquares moves model
+      |> \model -> { model | activeSquares = moves }
+
+
+squaresCanMove : Grid Tetromino -> List (Int, Int) -> Bool
+squaresCanMove grid squares =
+  case squares of
+    [] ->
+      True
+
+    (row, column) :: rest ->
+      let
+        squareCanMove =
+          0 <= row
+          && row < gridRows
+          && 0 <= column
+          && column < gridColumns
+          && (not << Grid.member row column) grid
+      in
+        if squareCanMove then
+          squaresCanMove grid rest
+        else
+          False
 
 
 tetrominoCanMove : Direction -> Grid Tetromino -> List (Int, Int) -> Bool
 tetrominoCanMove direction grid squares =
-  let
-    canMove moves =
-      case moves of
-        [] ->
-          True
+  List.map (moveSquare direction) squares
+    |> Set.fromList
+    |> flip Set.diff (Set.fromList squares)
+    |> Set.toList
+    |> squaresCanMove grid
 
-        (row, column) :: rest ->
-          let
-            squareCanMove =
-              0 <= row
-              && row < gridRows
-              && 0 <= column
-              && column < gridColumns
-              && (not << Grid.member row column) grid
-          in
-            if squareCanMove then
-              canMove rest
-            else
-              False
+
+type Rotation
+  = Clockwise
+  | CounterClockwise
+
+
+tetrominoCanRotate : Rotation -> Model -> Bool
+tetrominoCanRotate rotation model =
+  rotateSquares rotation model
+    |> Set.fromList
+    |> flip Set.diff (Set.fromList model.activeSquares)
+    |> Set.toList
+    |> squaresCanMove model.grid
+
+
+rotateSquares : Rotation -> Model -> List (Int, Int)
+rotateSquares rotation model =
+  let
+    squares =
+      model.activeSquares
+
+    transform (a, b) (c, d) =
+      (a + c, b + d)
+
+    rotate moves =
+      List.map2 transform moves squares
   in
-    List.map (moveSquare direction) squares
-      |> Set.fromList
-      |> flip Set.diff (Set.fromList squares)
-      |> Set.toList
-      |> canMove
+    case rotation of
+      Clockwise ->
+        case model.activeTetromino of
+          I ->
+            case model.activeOrientation of
+              North ->
+                rotate [(2, 1), (1, 0), (0, -1), (-1, -2)]
+
+              East ->
+                rotate [(-2, -1), (-1, 0), (0, 1), (1, 2)]
+
+              South ->
+                rotate [(2, 1), (1, 0), (0, -1), (-1, -2)]
+
+              West ->
+                rotate [(-2, -1), (-1, 0), (0, 1), (1, 2)]
+
+          O ->
+            squares
+
+          T ->
+            case model.activeOrientation of
+              North ->
+                rotate [(1, 1), (-1, 1), (0, 0), (1, -1)]
+
+              East ->
+                rotate [(1, -1), (1, 1), (0, 0), (-1, -1)]
+
+              South ->
+                rotate [(-1, -1), (1, -1), (0, 0), (-1, 1)]
+
+              West ->
+                rotate [(-1, 1), (-1, -1), (0, 0), (1, 1)]
+
+          J ->
+            case model.activeOrientation of
+              North ->
+                rotate [(0, 2), (-1, 1), (0, 0), (1, -1)]
+
+              East ->
+                rotate [(2, 0), (1, 1), (0, 0), (-1, -1)]
+
+              South ->
+                rotate [(0, -2), (1, -1), (0, 0), (-1, 1)]
+
+              West ->
+                rotate [(-2, 0), (-1, -1), (0, 0), (1, 1)]
+
+          L ->
+            case model.activeOrientation of
+              North ->
+                rotate [(-1, 1), (0, 0), (1, -1), (2, 0)]
+
+              East ->
+                rotate [(1, 1), (0, 0), (-1, -1), (0, -2)]
+
+              South ->
+                rotate [(1, -1), (0, 0), (-1, 1), (-2, 0)]
+
+              West ->
+                rotate [(-1, -1), (0, 0), (1, 1), (0, 2)]
+
+          S ->
+            case model.activeOrientation of
+              North ->
+                rotate [(-2, 1), (-1, 0), (0, 1), (1, 0)]
+
+              East ->
+                rotate [(2, -1), (1, 0), (0, -1), (-1, 0)]
+
+              South ->
+                rotate [(-2, 1), (-1, 0), (0, 1), (1, 0)]
+
+              West ->
+                rotate [(2, -1), (1, 0), (0, -1), (-1, 0)]
+
+          Z ->
+            case model.activeOrientation of
+              North ->
+                rotate [(-1, 2), (0, 1), (-1, 0), (0, -1)]
+
+              East ->
+                rotate [(1, -2), (0, -1), (1, 0), (0, 1)]
+
+              South ->
+                rotate [(-1, 2), (0, 1), (-1, 0), (0, -1)]
+
+              West ->
+                rotate [(1, -2), (0, -1), (1, 0), (0, 1)]
+
+      CounterClockwise ->
+        case model.activeTetromino of
+          I ->
+            case model.activeOrientation of
+              North ->
+                rotate [(2, 1), (1, 0), (0, -1), (-1, -2)]
+
+              East ->
+                rotate [(-2, -1), (-1, 0), (0, 1), (1, 2)]
+
+              South ->
+                rotate [(2, 1), (1, 0), (0, -1), (-1, -2)]
+
+              West ->
+                rotate [(-2, -1), (-1, 0), (0, 1), (1, 2)]
+
+          O ->
+            squares
+
+          T ->
+            case model.activeOrientation of
+              North ->
+                rotate [(1, -1), (1, 1), (0, 0), (-1, -1)]
+
+              East ->
+                rotate [(-1, -1), (1, -1), (0, 0), (-1, 1)]
+
+              South ->
+                rotate [(-1, 1), (-1, -1), (0, 0), (1, 1)]
+
+              West ->
+                rotate [(1, 1), (-1, 1), (0, 0), (1, -1)]
+
+          J ->
+            case model.activeOrientation of
+              North ->
+                rotate [(2, 0), (1, 1), (0, 0), (-1, -1)]
+
+              East ->
+                rotate [(0, -2), (1, -1), (0, 0), (-1, 1)]
+
+              South ->
+                rotate [(-2, 0), (-1, -1), (0, 0), (1, 1)]
+
+              West ->
+                rotate [(0, 2), (-1, 1), (0, 0), (1, -1)]
+
+          L ->
+            case model.activeOrientation of
+              North ->
+                rotate [(1, 1), (0, 0), (-1, -1), (0, -2)]
+
+              East ->
+                rotate [(1, -1), (0, 0), (-1, 1), (-2, 0)]
+
+              South ->
+                rotate [(-1, -1), (0, 0), (1, 1), (0, 2)]
+
+              West ->
+                rotate [(-1, 1), (0, 0), (1, -1), (2, 0)]
+
+          S ->
+            case model.activeOrientation of
+              North ->
+                rotate [(-2, 1), (-1, 0), (0, 1), (1, 0)]
+
+              East ->
+                rotate [(2, -1), (1, 0), (0, -1), (-1, 0)]
+
+              South ->
+                rotate [(-2, 1), (-1, 0), (0, 1), (1, 0)]
+
+              West ->
+                rotate [(2, -1), (1, 0), (0, -1), (-1, 0)]
+
+          Z ->
+            case model.activeOrientation of
+              North ->
+                rotate [(-1, 2), (0, 1), (-1, 0), (0, -1)]
+
+              East ->
+                rotate [(1, -2), (0, -1), (1, 0), (0, 1)]
+
+              South ->
+                rotate [(-1, 2), (0, 1), (-1, 0), (0, -1)]
+
+              West ->
+                rotate [(1, -2), (0, -1), (1, 0), (0, 1)]
+
+
+rotateTetromino : Rotation -> Model -> Model
+rotateTetromino rotation model =
+  let
+    orientation =
+      case rotation of
+        Clockwise ->
+          case model.activeOrientation of
+            North ->
+              East
+
+            East ->
+              South
+
+            South ->
+              West
+
+            West ->
+              North
+
+        CounterClockwise ->
+          case model.activeOrientation of
+            North ->
+              West
+
+            East ->
+              North
+
+            South ->
+              East
+
+            West ->
+              South
+
+    moves =
+      rotateSquares rotation model
+  in
+    moveSquares moves model
+      |> \model -> { model | activeSquares = moves }
+      |> \model -> { model | activeOrientation = orientation }
 
 
 setGameState : Model -> (Model, Cmd Msg)
@@ -322,6 +581,7 @@ newTetromino tetromino model =
   { model
       | activeTetromino = model.nextTetromino
       , nextTetromino = tetromino
+      , activeOrientation = North
   }
     |> initSquares
     |> initGrid
@@ -334,6 +594,7 @@ initTetromino init model =
       { model
           | activeTetromino = active
           , nextTetromino = next
+          , activeOrientation = North
       }
         |> initSquares
         |> initGrid
@@ -344,8 +605,17 @@ input code model =
   case model.gameState of
     Running ->
       case code of
-        32 -> -- space bar
-          model
+        68 -> -- a
+          if tetrominoCanRotate Clockwise model then
+            rotateTetromino Clockwise model
+          else
+            model
+
+        65 -> -- d
+          if tetrominoCanRotate CounterClockwise model then
+            rotateTetromino CounterClockwise model
+          else
+            model
 
         39 -> -- right arrow
           if tetrominoCanMove Right model.grid model.activeSquares then
