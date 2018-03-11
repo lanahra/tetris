@@ -2,19 +2,20 @@ import Array exposing (Array)
 import Collage exposing (..)
 import Color
 import Element exposing (..)
-import Grid exposing (Grid)
+import Field exposing (Field)
 import Html exposing (..)
 import Keyboard exposing (KeyCode)
 import Random exposing (Generator)
-import Set
+import Set exposing (Set)
 import Task
+import Tetromino exposing (Tetromino, Shape(..))
 import Time exposing (Time)
 import Window
 
 
 main =
   Html.program
-    { init = (init model, initCmd)
+    { init = model ! [ cmds ]
     , view = view
     , update = update
     , subscriptions = subscriptions
@@ -23,52 +24,17 @@ main =
 
 -- COMMANDS
 
-initCmd : Cmd Msg
-initCmd =
+cmds : Cmd Msg
+cmds =
   Cmd.batch
     [ Task.perform WindowResize Window.size
-    , initRollTetromino
+    , rollBag
     ]
 
 
-randomTetromino : Generator Tetromino
-randomTetromino =
-  let
-    intToTetromino i =
-      case i of
-        0 ->
-          I
-
-        1 ->
-          O
-
-        2 ->
-          T
-
-        3 ->
-          J
-
-        4 ->
-          L
-
-        5 ->
-          S
-
-        _ ->
-          Z
-  in
-    Random.map intToTetromino (Random.int 0 6)
-
-
-rollTetromino : Cmd Msg
-rollTetromino =
-  Random.generate NewTetromino randomTetromino
-
-
-initRollTetromino : Cmd Msg
-initRollTetromino =
-  Random.generate InitTetromino <|
-    Random.pair randomTetromino randomTetromino
+rollBag : Cmd Msg
+rollBag =
+  Random.generate Bag Tetromino.bag
 
 
 -- SUBSCRIPTIONS
@@ -77,108 +43,39 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
   Sub.batch
     [ Window.resizes (\size -> WindowResize size)
-    , Time.every Time.second Step
+    , Time.every (200 * Time.millisecond) Step
     , Keyboard.downs KeyDown
+    , Keyboard.ups KeyUp
     ]
 
 
 -- MODEL
 
-(gridRows, gridColumns) = (22, 10)
-
 
 type alias Model =
   { windowSize : (Int, Int)
-  , gameState : GameState
-  , grid : Grid Tetromino
-  , activeTetromino : Tetromino
-  , nextTetromino : Tetromino
-  , activeSquares : List (Int, Int)
-  , activeOrientation: Orientation
+  , pressed : Set KeyCode
+  , state : State
+  , field : Field
+  , tetromino : Tetromino
+  , bag : List Tetromino.Shape
   }
 
 
-type GameState
+type State
   = Running
   | Over
-
-
-type Tetromino
-  = I
-  | O
-  | T
-  | J
-  | L
-  | S
-  | Z
-
-
-type Orientation
-  = North
-  | East
-  | South
-  | West
 
 
 model : Model
 model =
   { windowSize = (0, 0)
-  , gameState = Running
-  , grid = Grid.empty gridRows
-  , activeTetromino = I
-  , nextTetromino = I
-  , activeSquares = []
-  , activeOrientation = North
+  , pressed = Set.empty
+  , state = Running
+  , field = Field.empty
+  , tetromino = Tetromino.init I
+  , bag = []
   }
-
-
-init : Model -> Model
-init model =
-  model
-
-
-initSquares : Model -> Model
-initSquares model =
-  let
-    updateSquares squares =
-      { model | activeSquares = squares }
-  in
-    case model.activeTetromino of
-      I ->
-        updateSquares [(0, 4), (1, 4), (2, 4), (3, 4)]
-
-      O ->
-        updateSquares [(0, 4), (0, 5), (1, 4), (1, 5)]
-
-      T ->
-        updateSquares [(0, 4), (1, 3), (1, 4), (1, 5)]
-
-      J ->
-        updateSquares [(0, 3), (1, 3), (1, 4), (1, 5)]
-
-      L ->
-        updateSquares [(1, 3), (1, 4), (1, 5), (0, 5)]
-
-      S ->
-        updateSquares [(1, 3), (1, 4), (0, 4), (0, 5)]
-
-      Z ->
-        updateSquares [(0, 3), (0, 4), (1, 4), (1, 5)]
-
-
-initGrid : Model -> Model
-initGrid model =
-  let
-    setGrid squares grid =
-      case squares of
-        [] ->
-          grid
-
-        square :: rest ->
-          uncurry Grid.insert square model.activeTetromino grid
-            |> setGrid rest
-  in
-    { model | grid = setGrid model.activeSquares model.grid }
 
 
 -- UPDATE
@@ -186,454 +83,153 @@ initGrid model =
 type Msg
   = WindowResize Window.Size
   | Step Time
-  | RollTetromino
-  | NewTetromino Tetromino
-  | InitTetromino (Tetromino, Tetromino)
+  | RollBag
+  | Bag (List Tetromino.Shape)
   | KeyDown KeyCode
+  | KeyUp KeyCode
 
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     WindowResize size ->
-      ({ model | windowSize = (size.width, size.height) }, Cmd.none)
+      { model | windowSize = (size.width, size.height) }
+        ! []
 
     Step _ ->
-      step model
+      let
+        drop =
+          Tetromino.drop model.tetromino
 
-    RollTetromino ->
-      (model, rollTetromino)
+        field =
+          Field.take model.tetromino model.field
+            |> Field.insert drop
 
-    NewTetromino tetromino ->
-      (newTetromino tetromino model, Cmd.none)
+        over positions =
+          case positions of
+            [] ->
+              False
 
-    InitTetromino tetrominos ->
-      (initTetromino tetrominos model, Cmd.none)
+            ((x, y), s) :: rest ->
+              if y >= 20 then
+                True
+              else
+                over rest
+      in
+        if occupied (Tetromino.diff drop model.tetromino) model.field then
+          if over (Field.toIndexedList model.field) then
+            { model | state = Over }
+              ! []
+          else
+            case model.bag of
+              [] ->
+                model
+                  ! [ rollBag ]
+
+              shape :: rest ->
+                let
+                  tetromino = Tetromino.init shape
+                in
+                  { model
+                      | field = Field.insert tetromino model.field
+                      , tetromino = tetromino
+                      , bag = rest
+                  }
+                    ! []
+        else
+          { model
+              | field = field
+              , tetromino = drop
+          }
+            ! []
+
+    RollBag ->
+      model
+        ! [ rollBag ]
+
+    Bag bag ->
+      case bag of
+        [] ->
+          model ! []
+
+        shape :: rest ->
+          let
+            tetromino = Tetromino.init shape
+          in
+            { model
+                | field = Field.insert tetromino model.field
+                , tetromino = tetromino
+                , bag = rest
+            }
+              ! []
 
     KeyDown code ->
-      (input code model, Cmd.none)
+      input code model
+        ! []
+
+    KeyUp code ->
+      { model | pressed = Set.remove code model.pressed }
+        ! []
 
 
-step : Model -> (Model, Cmd Msg)
-step model =
-  case model.gameState of
-    Running ->
-      if tetrominoCanMove Down model.grid model.activeSquares then
-        (moveTetromino Down model, Cmd.none)
-      else
-        setGameState model
-
-    Over ->
-      (model, Cmd.none)
-
-
-type Direction
-  = Left
-  | Up
-  | Right
-  | Down
-
-
-moveSquare : Direction -> (Int, Int) -> (Int, Int)
-moveSquare direction (row, column) =
-  case direction of
-    Left ->
-      (row, column - 1)
-
-    Up ->
-      (row - 1, column)
-
-    Right ->
-      (row, column + 1)
-
-    Down ->
-      (row + 1, column)
-
-
-moveSquares : List (Int, Int) -> Model -> Model
-moveSquares moves model =
+occupied : List Tetromino.Position -> Field -> Bool
+occupied positions field =
   let
-    remove squares grid =
-      case squares of
+    f positions =
+      case positions of
         [] ->
-          grid
-
-        square :: rest ->
-          uncurry Grid.remove square grid
-            |> remove rest
-
-    insert squares grid =
-      case squares of
-        [] ->
-          grid
-
-        square :: rest ->
-          uncurry Grid.insert square model.activeTetromino grid
-            |> insert rest
-  in
-    remove model.activeSquares model.grid
-      |> insert moves
-      |> \grid -> { model | grid = grid }
-
-
-moveTetromino : Direction -> Model -> Model
-moveTetromino direction model =
-  let
-    moves =
-      List.map (moveSquare direction) model.activeSquares
-  in
-    moveSquares moves model
-      |> \model -> { model | activeSquares = moves }
-
-
-squaresCanMove : Grid Tetromino -> List (Int, Int) -> Bool
-squaresCanMove grid squares =
-  case squares of
-    [] ->
-      True
-
-    (row, column) :: rest ->
-      let
-        squareCanMove =
-          0 <= row
-          && row < gridRows
-          && 0 <= column
-          && column < gridColumns
-          && (not << Grid.member row column) grid
-      in
-        if squareCanMove then
-          squaresCanMove grid rest
-        else
           False
 
-
-tetrominoCanMove : Direction -> Grid Tetromino -> List (Int, Int) -> Bool
-tetrominoCanMove direction grid squares =
-  List.map (moveSquare direction) squares
-    |> Set.fromList
-    |> flip Set.diff (Set.fromList squares)
-    |> Set.toList
-    |> squaresCanMove grid
-
-
-type Rotation
-  = Clockwise
-  | CounterClockwise
-
-
-tetrominoCanRotate : Rotation -> Model -> Bool
-tetrominoCanRotate rotation model =
-  rotateSquares rotation model
-    |> Set.fromList
-    |> flip Set.diff (Set.fromList model.activeSquares)
-    |> Set.toList
-    |> squaresCanMove model.grid
-
-
-rotateSquares : Rotation -> Model -> List (Int, Int)
-rotateSquares rotation model =
-  let
-    squares =
-      model.activeSquares
-
-    transform (a, b) (c, d) =
-      (a + c, b + d)
-
-    rotate moves =
-      List.map2 transform moves squares
+        (x, y) :: rest ->
+          if Field.occupied x y field then
+            True
+          else
+            f rest
   in
-    case rotation of
-      Clockwise ->
-        case model.activeTetromino of
-          I ->
-            case model.activeOrientation of
-              North ->
-                rotate [(2, 1), (1, 0), (0, -1), (-1, -2)]
-
-              East ->
-                rotate [(-2, -1), (-1, 0), (0, 1), (1, 2)]
-
-              South ->
-                rotate [(2, 1), (1, 0), (0, -1), (-1, -2)]
-
-              West ->
-                rotate [(-2, -1), (-1, 0), (0, 1), (1, 2)]
-
-          O ->
-            squares
-
-          T ->
-            case model.activeOrientation of
-              North ->
-                rotate [(1, 1), (-1, 1), (0, 0), (1, -1)]
-
-              East ->
-                rotate [(1, -1), (1, 1), (0, 0), (-1, -1)]
-
-              South ->
-                rotate [(-1, -1), (1, -1), (0, 0), (-1, 1)]
-
-              West ->
-                rotate [(-1, 1), (-1, -1), (0, 0), (1, 1)]
-
-          J ->
-            case model.activeOrientation of
-              North ->
-                rotate [(0, 2), (-1, 1), (0, 0), (1, -1)]
-
-              East ->
-                rotate [(2, 0), (1, 1), (0, 0), (-1, -1)]
-
-              South ->
-                rotate [(0, -2), (1, -1), (0, 0), (-1, 1)]
-
-              West ->
-                rotate [(-2, 0), (-1, -1), (0, 0), (1, 1)]
-
-          L ->
-            case model.activeOrientation of
-              North ->
-                rotate [(-1, 1), (0, 0), (1, -1), (2, 0)]
-
-              East ->
-                rotate [(1, 1), (0, 0), (-1, -1), (0, -2)]
-
-              South ->
-                rotate [(1, -1), (0, 0), (-1, 1), (-2, 0)]
-
-              West ->
-                rotate [(-1, -1), (0, 0), (1, 1), (0, 2)]
-
-          S ->
-            case model.activeOrientation of
-              North ->
-                rotate [(-2, 1), (-1, 0), (0, 1), (1, 0)]
-
-              East ->
-                rotate [(2, -1), (1, 0), (0, -1), (-1, 0)]
-
-              South ->
-                rotate [(-2, 1), (-1, 0), (0, 1), (1, 0)]
-
-              West ->
-                rotate [(2, -1), (1, 0), (0, -1), (-1, 0)]
-
-          Z ->
-            case model.activeOrientation of
-              North ->
-                rotate [(-1, 2), (0, 1), (-1, 0), (0, -1)]
-
-              East ->
-                rotate [(1, -2), (0, -1), (1, 0), (0, 1)]
-
-              South ->
-                rotate [(-1, 2), (0, 1), (-1, 0), (0, -1)]
-
-              West ->
-                rotate [(1, -2), (0, -1), (1, 0), (0, 1)]
-
-      CounterClockwise ->
-        case model.activeTetromino of
-          I ->
-            case model.activeOrientation of
-              North ->
-                rotate [(2, 1), (1, 0), (0, -1), (-1, -2)]
-
-              East ->
-                rotate [(-2, -1), (-1, 0), (0, 1), (1, 2)]
-
-              South ->
-                rotate [(2, 1), (1, 0), (0, -1), (-1, -2)]
-
-              West ->
-                rotate [(-2, -1), (-1, 0), (0, 1), (1, 2)]
-
-          O ->
-            squares
-
-          T ->
-            case model.activeOrientation of
-              North ->
-                rotate [(1, -1), (1, 1), (0, 0), (-1, -1)]
-
-              East ->
-                rotate [(-1, -1), (1, -1), (0, 0), (-1, 1)]
-
-              South ->
-                rotate [(-1, 1), (-1, -1), (0, 0), (1, 1)]
-
-              West ->
-                rotate [(1, 1), (-1, 1), (0, 0), (1, -1)]
-
-          J ->
-            case model.activeOrientation of
-              North ->
-                rotate [(2, 0), (1, 1), (0, 0), (-1, -1)]
-
-              East ->
-                rotate [(0, -2), (1, -1), (0, 0), (-1, 1)]
-
-              South ->
-                rotate [(-2, 0), (-1, -1), (0, 0), (1, 1)]
-
-              West ->
-                rotate [(0, 2), (-1, 1), (0, 0), (1, -1)]
-
-          L ->
-            case model.activeOrientation of
-              North ->
-                rotate [(1, 1), (0, 0), (-1, -1), (0, -2)]
-
-              East ->
-                rotate [(1, -1), (0, 0), (-1, 1), (-2, 0)]
-
-              South ->
-                rotate [(-1, -1), (0, 0), (1, 1), (0, 2)]
-
-              West ->
-                rotate [(-1, 1), (0, 0), (1, -1), (2, 0)]
-
-          S ->
-            case model.activeOrientation of
-              North ->
-                rotate [(-2, 1), (-1, 0), (0, 1), (1, 0)]
-
-              East ->
-                rotate [(2, -1), (1, 0), (0, -1), (-1, 0)]
-
-              South ->
-                rotate [(-2, 1), (-1, 0), (0, 1), (1, 0)]
-
-              West ->
-                rotate [(2, -1), (1, 0), (0, -1), (-1, 0)]
-
-          Z ->
-            case model.activeOrientation of
-              North ->
-                rotate [(-1, 2), (0, 1), (-1, 0), (0, -1)]
-
-              East ->
-                rotate [(1, -2), (0, -1), (1, 0), (0, 1)]
-
-              South ->
-                rotate [(-1, 2), (0, 1), (-1, 0), (0, -1)]
-
-              West ->
-                rotate [(1, -2), (0, -1), (1, 0), (0, 1)]
-
-
-rotateTetromino : Rotation -> Model -> Model
-rotateTetromino rotation model =
-  let
-    orientation =
-      case rotation of
-        Clockwise ->
-          case model.activeOrientation of
-            North ->
-              East
-
-            East ->
-              South
-
-            South ->
-              West
-
-            West ->
-              North
-
-        CounterClockwise ->
-          case model.activeOrientation of
-            North ->
-              West
-
-            East ->
-              North
-
-            South ->
-              East
-
-            West ->
-              South
-
-    moves =
-      rotateSquares rotation model
-  in
-    moveSquares moves model
-      |> \model -> { model | activeSquares = moves }
-      |> \model -> { model | activeOrientation = orientation }
-
-
-setGameState : Model -> (Model, Cmd Msg)
-setGameState model =
-  if gameIsOver model.grid then
-    ({ model | gameState = Over }, Cmd.none)
-  else
-    (model, rollTetromino)
-
-
-gameIsOver : Grid Tetromino -> Bool
-gameIsOver grid =
-  Grid.sizeRow 0 grid + Grid.sizeRow 1 grid > 0
-
-
-newTetromino : Tetromino -> Model -> Model
-newTetromino tetromino model =
-  { model
-      | activeTetromino = model.nextTetromino
-      , nextTetromino = tetromino
-      , activeOrientation = North
-  }
-    |> initSquares
-    |> initGrid
-
-
-initTetromino : (Tetromino, Tetromino) -> Model -> Model
-initTetromino init model =
-  case init of
-    (active, next) ->
-      { model
-          | activeTetromino = active
-          , nextTetromino = next
-          , activeOrientation = North
-      }
-        |> initSquares
-        |> initGrid
+    f positions
 
 
 input : KeyCode -> Model -> Model
 input code model =
-  case model.gameState of
-    Running ->
-      case code of
-        68 -> -- a
-          if tetrominoCanRotate Clockwise model then
-            rotateTetromino Clockwise model
+  if Set.member code model.pressed then
+    model
+  else
+    case model.state of
+      Running ->
+        let
+          move =
+            case code of
+              68 -> -- a
+                Tetromino.rotateLeft model.tetromino
+
+              65 -> -- d
+                Tetromino.rotateRight model.tetromino
+
+              39 -> -- right arrow
+                Tetromino.moveRight model.tetromino
+
+              37 -> -- left arrow
+                Tetromino.moveLeft model.tetromino
+
+              _ ->
+                model.tetromino
+
+          field =
+            Field.take model.tetromino model.field
+              |> Field.insert move
+
+        in
+          if not <| occupied (Tetromino.diff move model.tetromino) model.field then
+            { model
+                | pressed = Set.insert code model.pressed
+                , field = field
+                , tetromino = move
+            }
           else
-            model
+            { model | pressed = Set.insert code model.pressed }
 
-        65 -> -- d
-          if tetrominoCanRotate CounterClockwise model then
-            rotateTetromino CounterClockwise model
-          else
-            model
-
-        39 -> -- right arrow
-          if tetrominoCanMove Right model.grid model.activeSquares then
-            moveTetromino Right model
-          else
-            model
-
-        37 -> -- left arrow
-          if tetrominoCanMove Left model.grid model.activeSquares then
-            moveTetromino Left model
-          else
-            model
-
-        _ ->
-          model
-
-    Over ->
-      model
+      Over ->
+        model
 
 
 -- VIEW
@@ -645,71 +241,71 @@ view : Model -> Html Msg
 view model =
   toHtml <|
   uncurry container model.windowSize middle <|
-  layers (makeField :: [makeGrid model.grid])
+  layers (drawOutline :: [ drawField model.field ])
 
 
-makeField : Element
-makeField =
+drawOutline : Element
+drawOutline =
   let
     (width, height) =
-      (blockSize * gridColumns, blockSize * gridRows)
+      (blockSize * Field.columns, blockSize * Field.rows)
   in
     collage width height <|
       [ outlined defaultLine (rect width height)
       ]
 
 
-makeGrid : Grid Tetromino -> Element
-makeGrid grid =
+drawField : Field -> Element
+drawField field =
   let
-    makeElement ((row, column), square) =
-      makeSquare square
-        |> transformSquare row column
+    drawElement ((x, y), shape) =
+      drawShape shape
+        |> transformShape x y
   in
-    Grid.toIndexedList grid
-      |> List.map makeElement
+    Field.toIndexedList field
+      |> List.map drawElement
       |> layers
 
 
-transformSquare : Int -> Int -> Element -> Element
-transformSquare row column square =
+transformShape : Int -> Int -> Element -> Element
+transformShape x y shape =
   let
     (width, height) =
-      (blockSize * gridColumns, blockSize * gridRows)
+      (blockSize * Field.columns, blockSize * Field.rows)
 
     position =
-      topLeftAt (absolute (column * blockSize)) (absolute (row * blockSize))
+      bottomLeftAt (absolute (x * blockSize)) (absolute (y * blockSize))
   in
-    container width height position square
+    container width height position shape
 
 
-makeSquare : Tetromino -> Element
-makeSquare square =
+drawShape : Tetromino.Shape -> Element
+drawShape shape =
   let
-    squareCollage color =
+    square color =
       collage blockSize blockSize <|
         [ filled color (Collage.square blockSize)
         , outlined defaultLine (Collage.square blockSize)
         ]
   in
-    case square of
+    case shape of
       I ->
-        squareCollage Color.blue
+        square Color.blue
 
       O ->
-        squareCollage Color.red
+        square Color.red
 
       T ->
-        squareCollage Color.green
+        square Color.green
 
       J ->
-        squareCollage Color.yellow
+        square Color.yellow
 
       L ->
-        squareCollage Color.orange
+        square Color.orange
 
       S ->
-        squareCollage Color.purple
+        square Color.purple
 
       Z ->
-        squareCollage Color.brown
+        square Color.brown
